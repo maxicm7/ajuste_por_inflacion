@@ -11,7 +11,6 @@ st.set_page_config(
 )
 
 # --- DATOS IPC ---
-# La aplicación AHORA SIEMPRE usará esta lista. No hay forma de subir otra.
 ipc_csv_string = """fecha,ipc_valor
 2016-12-01,100.0000
 2017-01-01,101.3000
@@ -118,12 +117,9 @@ ipc_csv_string = """fecha,ipc_valor
 2025-06-01,8855.6000
 """
 
-# --- Funciones Auxiliares ---
 @st.cache_data
 def cargar_ipc_interno():
-    """Carga los datos del IPC desde el string interno del código."""
     try:
-        # Usamos io.StringIO para que pandas lea el string como si fuera un archivo
         df_ipc = pd.read_csv(io.StringIO(ipc_csv_string))
         df_ipc['fecha'] = pd.to_datetime(df_ipc['fecha'], format='%Y-%m-%d')
         df_ipc.set_index('fecha', inplace=True)
@@ -134,11 +130,9 @@ def cargar_ipc_interno():
         return None
 
 def ajustar_dataframe(df, fecha_cierre, df_ipc):
-    """Aplica el ajuste por inflación al DataFrame proporcionado por el usuario."""
-    # (Esta función no necesita cambios, ya funciona perfecto)
-    fecha_ipc_cierre = fecha_cierre.replace(day=1)
+    fecha_ipc_cierre_ts = pd.to_datetime(fecha_cierre.replace(day=1))
     try:
-        ipc_cierre = df_ipc.loc[fecha_ipc_cierre, 'ipc_valor']
+        ipc_cierre = df_ipc.loc[fecha_ipc_cierre_ts, 'ipc_valor']
     except KeyError:
         st.error(f"No se encontró el IPC para el mes de cierre ({fecha_cierre.strftime('%B %Y')}). Por favor, actualiza la lista de IPC en el código de la aplicación.")
         return None
@@ -147,9 +141,10 @@ def ajustar_dataframe(df, fecha_cierre, df_ipc):
     for index, row in df.iterrows():
         fecha_origen = row['Fecha']
         monto_historico = row['Monto_Historico']
-        fecha_ipc_origen = (fecha_origen.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)
+        fecha_ipc_origen_date = (fecha_origen.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)
+        fecha_ipc_origen_ts = pd.to_datetime(fecha_ipc_origen_date)
         try:
-            ipc_origen = df_ipc.loc[fecha_ipc_origen, 'ipc_valor']
+            ipc_origen = df_ipc.loc[fecha_ipc_origen_ts, 'ipc_valor']
             coeficiente = ipc_cierre / ipc_origen
             valor_ajustado = monto_historico * coeficiente
             ajuste_recpam = valor_ajustado - monto_historico
@@ -166,32 +161,26 @@ def ajustar_dataframe(df, fecha_cierre, df_ipc):
     df_resultado['Ajuste_RECPAM'] = ajustes_recpam
     return df_resultado
 
-# --- Interfaz de la App ---
 st.title("📈 Calculadora de Ajuste por Inflación")
 st.markdown("Esta herramienta ajusta partidas por inflación usando los índices IPC internos. **Recuerda actualizar la lista de IPC en el código para datos futuros.**")
 
-# Carga automática de los datos IPC internos
 df_ipc = cargar_ipc_interno()
 
 if df_ipc is not None:
     with st.sidebar:
         st.header("1. Carga tus partidas")
-        uploaded_file = st.file_uploader(
-            "Sube tu archivo de partidas (CSV o Excel)",
-            type=["csv", "xlsx"]
-        )
+        uploaded_file = st.file_uploader("Sube tu archivo de partidas (CSV o Excel)", type=["csv", "xlsx"])
         st.markdown("---")
         st.header("2. Elige la fecha de cierre")
         fecha_cierre = st.date_input(
             "¿A qué fecha quieres ajustar los valores?",
             datetime.date(2023, 12, 31),
             min_value=datetime.date(2017, 1, 1),
-            max_value=datetime.date(2025, 12, 31) # Ampliamos el rango máximo
+            max_value=datetime.date(2025, 12, 31)
         )
 
     if uploaded_file is not None:
         try:
-            # El resto de la lógica para procesar el archivo del usuario no cambia
             if uploaded_file.name.endswith('.csv'):
                 df_usuario = pd.read_csv(uploaded_file, sep=';', decimal=',')
             else:
@@ -209,7 +198,6 @@ if df_ipc is not None:
                     df_resultado = ajustar_dataframe(df_usuario, fecha_cierre, df_ipc)
 
                 if df_resultado is not None:
-                    # El código para mostrar los resultados no cambia
                     st.subheader(f"📊 Resultados Ajustados al {fecha_cierre.strftime('%d/%m/%Y')}")
                     df_display = df_resultado.style.format({
                         "Monto_Historico": "AR$ {:,.2f}", "Coeficiente": "{:.4f}",
